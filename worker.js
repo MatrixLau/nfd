@@ -107,7 +107,7 @@ async function onMessage (message) {
     if(!message?.reply_to_message?.chat){
       return sendMessage({
         chat_id:ADMIN_UID,
-        text:'使用方法，回复转发的消息，并发送回复消息，或者`/block`、`/unblock`、`/checkblock`等指令'
+        text:'使用方法：回复转发的消息，并发送`/block`、`/unblock`、`/checkblock`等指令'
       })
     }
     if(/^\/block$/.exec(message.text)){
