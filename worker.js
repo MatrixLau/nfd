@@ -4,11 +4,16 @@ const SECRET = ENV_BOT_SECRET // A-Z, a-z, 0-9, _ and -
 const ADMIN_UID = ENV_ADMIN_UID // your user id, get it from https://t.me/username_to_id_bot
 
 const NOTIFY_INTERVAL = 3600 * 1000;
+const RECEIVE_NOTIFY_INTERVAL = 900 * 1000;
 const fraudDb = 'https://raw.githubusercontent.com/LloydAsp/nfd/main/data/fraud.db';
 const notificationUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/notification.txt'
 const startMsgUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/startMessage.md';
+const receiveNotificationUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/receiveNotification.txt'
 
-const enable_notification = true
+/* 收信方提示信息 */
+const enable_notification = false
+/* 发信方提示信息 */
+const enable_receive_notification = true;
 /**
  * Return url to telegram api, optionally with parameters added
  */
@@ -149,6 +154,18 @@ async function handleGuestMessage(message){
   console.log(JSON.stringify(forwardReq))
   if(forwardReq.ok){
     await nfd.put('msg-map-' + forwardReq.result.message_id, chatId)
+
+    //收到私信自动回复
+    if(enable_receive_notification) {
+      let lastMsgTime = await nfd.get('lastmsg-receive-' + chatId, { type: "json" })
+      if(!lastMsgTime || Date.now() - lastMsgTime > RECEIVE_NOTIFY_INTERVAL){
+        await nfd.put('lastmsg-receive-' + chatId, Date.now())
+        return sendMessage({
+          chat_id: message.chat.id,
+          text:await fetch(receiveNotificationUrl).then(r => r.text())
+      })
+    }
+    }
   }
   return handleNotify(message)
 }
