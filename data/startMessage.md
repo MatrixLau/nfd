@@ -1,5 +1,5 @@
 🤖Bot Created Via NFD
-👨‍💻Bot is belong to @MatrixKLau
+👨‍💻Bot is belong to @MatrixLau
 
 📨Message received will directly forward to @MatrixLau
 ‼️Please prevent a DM and nicely use this bot
