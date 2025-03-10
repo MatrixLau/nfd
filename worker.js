@@ -106,6 +106,7 @@ async function onMessage (message) {
     return sendMessage({
       chat_id:message.chat.id,
       text:startMsg,
+      parse_mode: "Markdown"
     })
   }
   if(message.chat.id.toString() === ADMIN_UID){
