@@ -160,7 +160,7 @@ async function handleNotify(message){
   if(await isFraud(chatId)){
     return sendMessage({
       chat_id: ADMIN_UID,
-      text:`检测到骗子，UID${chatId}`
+      text:`检测到骗子，UID:${chatId}`
     })
   }
   if(enable_notification){
@@ -188,7 +188,7 @@ async function handleBlock(message){
 
   return sendMessage({
     chat_id: ADMIN_UID,
-    text: `UID:${guestChantId}屏蔽成功`,
+    text: `UID:${guestChantId} 屏蔽成功`,
   })
 }
 
@@ -200,7 +200,7 @@ async function handleUnBlock(message){
 
   return sendMessage({
     chat_id: ADMIN_UID,
-    text:`UID:${guestChantId}解除屏蔽成功`,
+    text:`UID:${guestChantId} 解除屏蔽成功`,
   })
 }
 
@@ -211,7 +211,7 @@ async function checkBlock(message){
 
   return sendMessage({
     chat_id: ADMIN_UID,
-    text: `UID:${guestChantId}` + (blocked ? '被屏蔽' : '没有被屏蔽')
+    text: `UID:${guestChantId}` + (blocked ? ' 被屏蔽' : '没有被屏蔽')
   })
 }
 
