@@ -5,271 +5,311 @@ const ADMIN_UID = ENV_ADMIN_UID // your user id, get it from https://t.me/userna
 
 const NOTIFY_INTERVAL = 3600 * 1000;
 const RECEIVE_NOTIFY_INTERVAL = 900 * 1000;
+//验证通过有效时长
+const VERIFICATION_INTERVAL = 86400 * 1000;
 const fraudDb = 'https://raw.githubusercontent.com/LloydAsp/nfd/main/data/fraud.db';
 const notificationUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/notification.txt'
 const startMsgUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/startMessage.md';
 const receiveNotificationUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/receiveNotification.txt'
+const verificationNotificationUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/verificationNotification.txt'
+//自行替换获取验证码的链接并进行自动/手动更换验证码
+const verificationCodeUrl = 'https://raw.githubusercontent.com/MatrixLau/nfd/refs/heads/main/data/verificationCode.txt'
 
 /* 收信方提示信息 */
 const enable_notification = false
 /* 发信方提示信息 */
 const enable_receive_notification = true;
+/* 发信方验证 */
+const enable_verify_code = true;
+
 /**
  * Return url to telegram api, optionally with parameters added
  */
-function apiUrl (methodName, params = null) {
-  let query = ''
-  if (params) {
-    query = '?' + new URLSearchParams(params).toString()
-  }
-  return `https://api.telegram.org/bot${TOKEN}/${methodName}${query}`
+function apiUrl(methodName, params = null) {
+    let query = ''
+    if (params) {
+        query = '?' + new URLSearchParams(params).toString()
+    }
+    return `https://api.telegram.org/bot${TOKEN}/${methodName}${query}`
 }
 
-function requestTelegram(methodName, body, params = null){
-  return fetch(apiUrl(methodName, params), body)
-    .then(r => r.json())
+function requestTelegram(methodName, body, params = null) {
+    return fetch(apiUrl(methodName, params), body)
+        .then(r => r.json())
 }
 
-function makeReqBody(body){
-  return {
-    method:'POST',
-    headers:{
-      'content-type':'application/json'
-    },
-    body:JSON.stringify(body)
-  }
+function makeReqBody(body) {
+    return {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    }
 }
 
-function sendMessage(msg = {}){
-  return requestTelegram('sendMessage', makeReqBody(msg))
+function sendMessage(msg = {}) {
+    return requestTelegram('sendMessage', makeReqBody(msg))
 }
 
-function copyMessage(msg = {}){
-  return requestTelegram('copyMessage', makeReqBody(msg))
+function copyMessage(msg = {}) {
+    return requestTelegram('copyMessage', makeReqBody(msg))
 }
 
-function forwardMessage(msg){
-  return requestTelegram('forwardMessage', makeReqBody(msg))
+function forwardMessage(msg) {
+    return requestTelegram('forwardMessage', makeReqBody(msg))
 }
 
 /**
  * Wait for requests to the worker
  */
 addEventListener('fetch', event => {
-  const url = new URL(event.request.url)
-  if (url.pathname === WEBHOOK) {
-    event.respondWith(handleWebhook(event))
-  } else if (url.pathname === '/registerWebhook') {
-    event.respondWith(registerWebhook(event, url, WEBHOOK, SECRET))
-  } else if (url.pathname === '/unRegisterWebhook') {
-    event.respondWith(unRegisterWebhook(event))
-  } else {
-    event.respondWith(new Response('No handler for this request'))
-  }
+    const url = new URL(event.request.url)
+    if (url.pathname === WEBHOOK) {
+        event.respondWith(handleWebhook(event))
+    } else if (url.pathname === '/registerWebhook') {
+        event.respondWith(registerWebhook(event, url, WEBHOOK, SECRET))
+    } else if (url.pathname === '/unRegisterWebhook') {
+        event.respondWith(unRegisterWebhook(event))
+    } else {
+        event.respondWith(new Response('No handler for this request'))
+    }
 })
 
 /**
  * Handle requests to WEBHOOK
  * https://core.telegram.org/bots/api#update
  */
-async function handleWebhook (event) {
-  // Check secret
-  if (event.request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== SECRET) {
-    return new Response('Unauthorized', { status: 403 })
-  }
+async function handleWebhook(event) {
+    // Check secret
+    if (event.request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== SECRET) {
+        return new Response('Unauthorized', { status: 403 })
+    }
 
-  // Read request body synchronously
-  const update = await event.request.json()
-  // Deal with response asynchronously
-  event.waitUntil(onUpdate(update))
+    // Read request body synchronously
+    const update = await event.request.json()
+    // Deal with response asynchronously
+    event.waitUntil(onUpdate(update))
 
-  return new Response('Ok')
+    return new Response('Ok')
 }
 
 /**
  * Handle incoming Update
  * https://core.telegram.org/bots/api#update
  */
-async function onUpdate (update) {
-  if ('message' in update) {
-    await onMessage(update.message)
-  }
+async function onUpdate(update) {
+    if ('message' in update) {
+        await onMessage(update.message)
+    }
 }
 
 /**
  * Handle incoming Message
  * https://core.telegram.org/bots/api#message
  */
-async function onMessage (message) {
-  if(message.text === '/start'){
-    let startMsg = await fetch(startMsgUrl).then(r => r.text())
-    return sendMessage({
-      chat_id:message.chat.id,
-      text:startMsg,
-      parse_mode: "Markdown"
-    })
-  }
-  if(message.chat.id.toString() === ADMIN_UID){
-    if(!message?.reply_to_message?.chat){
-      return sendMessage({
-        chat_id:ADMIN_UID,
-        text:'使用方法：回复转发的消息，并发送`/block`、`/unblock`、`/checkblock`等指令'
-      })
-    }
-    if(/^\/block$/.exec(message.text)){
-      return handleBlock(message)
-    }
-    if(/^\/unblock$/.exec(message.text)){
-      return handleUnBlock(message)
-    }
-    if(/^\/checkblock$/.exec(message.text)){
-      return checkBlock(message)
-    }
-    let guestChantId = await nfd.get('msg-map-' + message?.reply_to_message.message_id,
-                                      { type: "json" })
-    return copyMessage({
-      chat_id: guestChantId,
-      from_chat_id:message.chat.id,
-      message_id:message.message_id,
-    })
-  }
-  return handleGuestMessage(message)
-}
-
-async function handleGuestMessage(message){
-  let chatId = message.chat.id;
-  let isblocked = await nfd.get('isblocked-' + chatId, { type: "json" })
-  
-  if(isblocked){
-    return sendMessage({
-      chat_id: chatId,
-      text:'Your are blocked'
-    })
-  }
-
-  let forwardReq = await forwardMessage({
-    chat_id:ADMIN_UID,
-    from_chat_id:message.chat.id,
-    message_id:message.message_id
-  })
-  console.log(JSON.stringify(forwardReq))
-  if(forwardReq.ok){
-    await nfd.put('msg-map-' + forwardReq.result.message_id, chatId)
-
-    //收到私信自动回复
-    if(enable_receive_notification) {
-      let lastMsgTime = await nfd.get('lastmsg-receive-' + chatId, { type: "json" })
-      if(!lastMsgTime || Date.now() - lastMsgTime > RECEIVE_NOTIFY_INTERVAL){
-        await nfd.put('lastmsg-receive-' + chatId, Date.now())
+async function onMessage(message) {
+    if (message.text === '/start') {
+        let startMsg = await fetch(startMsgUrl).then(r => r.text())
         return sendMessage({
-          chat_id: message.chat.id,
-          text:await fetch(receiveNotificationUrl).then(r => r.text())
-      })
+            chat_id: message.chat.id,
+            text: startMsg,
+            parse_mode: "Markdown"
+        })
     }
+    if (message.chat.id.toString() === ADMIN_UID) {
+        if (!message?.reply_to_message?.chat) {
+            return sendMessage({
+                chat_id: ADMIN_UID,
+                text: '使用方法：回复转发的消息，并发送`/block`、`/unblock`、`/checkblock`等指令'
+            })
+        }
+        if (/^\/block$/.exec(message.text)) {
+            return handleBlock(message)
+        }
+        if (/^\/unblock$/.exec(message.text)) {
+            return handleUnBlock(message)
+        }
+        if (/^\/checkblock$/.exec(message.text)) {
+            return checkBlock(message)
+        }
+        let guestChantId = await nfd.get('msg-map-' + message?.reply_to_message.message_id,
+            { type: "json" })
+        return copyMessage({
+            chat_id: guestChantId,
+            from_chat_id: message.chat.id,
+            message_id: message.message_id,
+        })
     }
-  }
-  return handleNotify(message)
+    return handleGuestMessage(message)
 }
 
-async function handleNotify(message){
-  // 先判断是否是诈骗人员，如果是，则直接提醒
-  // 如果不是，则根据时间间隔提醒：用户id，交易注意点等
-  let chatId = message.chat.id;
-  if(await isFraud(chatId)){
-    return sendMessage({
-      chat_id: ADMIN_UID,
-      text:`检测到骗子，UID:${chatId}`
-    })
-  }
-  if(enable_notification){
-    let lastMsgTime = await nfd.get('lastmsg-' + chatId, { type: "json" })
-    if(!lastMsgTime || Date.now() - lastMsgTime > NOTIFY_INTERVAL){
-      await nfd.put('lastmsg-' + chatId, Date.now())
-      return sendMessage({
+async function handleGuestMessage(message) {
+    let chatId = message.chat.id;
+    let isblocked = await nfd.get('isblocked-' + chatId, { type: "json" })
+
+    if (isblocked) {
+        return sendMessage({
+            chat_id: chatId,
+            text: '你已被屏蔽'
+        })
+    }
+
+    if (message.text.startsWith('/code ')) {
+        let sendCode = message.text.substring(6).trim()
+        let correctCode = await fetch(verificationCodeUrl).then(r => r.text())
+        if (sendCode === correctCode.trim()) {
+            await nfd.put('last-verification-' + chatId, Date.now())
+            return sendMessage({
+                chat_id: chatId,
+                text: '✅ 验证通过，请发送需要传达的信息'
+            })
+        } else {
+            return sendMessage({
+                chat_id: chatId,
+                text: `⚠️ 验证失败，请检查验证码是否输入正确`
+            })
+        }
+    }
+
+    //验证是否通过验证
+    if (enable_verify_code) {
+        let passVerificationTime = await nfd.get('last-verification-' + chatId, { type: "json" })
+        if (!passVerificationTime || Date.now() - passVerificationTime > VERIFICATION_INTERVAL) {
+            return sendMessage({
+                chat_id: message.chat.id,
+                text: await fetch(verificationNotificationUrl)
+                    .then(r => r.text())
+                    .then(responseText => {
+                        return `${responseText}\n${verificationCodeUrl}`;
+                    })
+            })
+        }
+    }
+
+    let forwardReq = await forwardMessage({
         chat_id: ADMIN_UID,
-        text:await fetch(notificationUrl).then(r => r.text())
-      })
-    }
-  }
-}
-
-async function handleBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-                                      { type: "json" })
-  if(guestChantId === ADMIN_UID){
-    return sendMessage({
-      chat_id: ADMIN_UID,
-      text:'不能屏蔽自己'
+        from_chat_id: message.chat.id,
+        message_id: message.message_id
     })
-  }
-  await nfd.put('isblocked-' + guestChantId, true)
+    console.log(JSON.stringify(forwardReq))
+    if (forwardReq.ok) {
+        await nfd.put('msg-map-' + forwardReq.result.message_id, chatId)
 
-  return sendMessage({
-    chat_id: ADMIN_UID,
-    text: `UID:${guestChantId} 屏蔽成功`,
-  })
+        //收到私信自动回复
+        if (enable_receive_notification) {
+            let lastMsgTime = await nfd.get('lastmsg-receive-' + chatId, { type: "json" })
+            if (!lastMsgTime || Date.now() - lastMsgTime > RECEIVE_NOTIFY_INTERVAL) {
+                await nfd.put('lastmsg-receive-' + chatId, Date.now())
+                return sendMessage({
+                    chat_id: message.chat.id,
+                    text: await fetch(receiveNotificationUrl).then(r => r.text())
+                })
+            }
+        }
+    }
+    return handleNotify(message)
 }
 
-async function handleUnBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-  { type: "json" })
-
-  await nfd.put('isblocked-' + guestChantId, false)
-
-  return sendMessage({
-    chat_id: ADMIN_UID,
-    text:`UID:${guestChantId} 解除屏蔽成功`,
-  })
+async function handleNotify(message) {
+    // 先判断是否是诈骗人员，如果是，则直接提醒
+    // 如果不是，则根据时间间隔提醒：用户id，交易注意点等
+    let chatId = message.chat.id;
+    if (await isFraud(chatId)) {
+        return sendMessage({
+            chat_id: ADMIN_UID,
+            text: `检测到骗子，UID:${chatId}`
+        })
+    }
+    if (enable_notification) {
+        let lastMsgTime = await nfd.get('lastmsg-' + chatId, { type: "json" })
+        if (!lastMsgTime || Date.now() - lastMsgTime > NOTIFY_INTERVAL) {
+            await nfd.put('lastmsg-' + chatId, Date.now())
+            return sendMessage({
+                chat_id: ADMIN_UID,
+                text: await fetch(notificationUrl).then(r => r.text())
+            })
+        }
+    }
 }
 
-async function checkBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-  { type: "json" })
-  let blocked = await nfd.get('isblocked-' + guestChantId, { type: "json" })
+async function handleBlock(message) {
+    let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
+        { type: "json" })
+    if (guestChantId === ADMIN_UID) {
+        return sendMessage({
+            chat_id: ADMIN_UID,
+            text: '不能屏蔽自己'
+        })
+    }
+    await nfd.put('isblocked-' + guestChantId, true)
 
-  return sendMessage({
-    chat_id: ADMIN_UID,
-    text: `UID:${guestChantId}` + (blocked ? ' 被屏蔽' : '没有被屏蔽')
-  })
+    return sendMessage({
+        chat_id: ADMIN_UID,
+        text: `UID:${guestChantId} 屏蔽成功`,
+    })
+}
+
+async function handleUnBlock(message) {
+    let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
+        { type: "json" })
+
+    await nfd.put('isblocked-' + guestChantId, false)
+
+    return sendMessage({
+        chat_id: ADMIN_UID,
+        text: `UID:${guestChantId} 解除屏蔽成功`,
+    })
+}
+
+async function checkBlock(message) {
+    let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
+        { type: "json" })
+    let blocked = await nfd.get('isblocked-' + guestChantId, { type: "json" })
+
+    return sendMessage({
+        chat_id: ADMIN_UID,
+        text: `UID:${guestChantId}` + (blocked ? ' 被屏蔽' : '没有被屏蔽')
+    })
 }
 
 /**
  * Send plain text message
  * https://core.telegram.org/bots/api#sendmessage
  */
-async function sendPlainText (chatId, text) {
-  return sendMessage({
-    chat_id: chatId,
-    text
-  })
+async function sendPlainText(chatId, text) {
+    return sendMessage({
+        chat_id: chatId,
+        text
+    })
 }
 
 /**
  * Set webhook to this worker's url
  * https://core.telegram.org/bots/api#setwebhook
  */
-async function registerWebhook (event, requestUrl, suffix, secret) {
-  // https://core.telegram.org/bots/api#setwebhook
-  const webhookUrl = `${requestUrl.protocol}//${requestUrl.hostname}${suffix}`
-  const r = await (await fetch(apiUrl('setWebhook', { url: webhookUrl, secret_token: secret }))).json()
-  return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
+async function registerWebhook(event, requestUrl, suffix, secret) {
+    // https://core.telegram.org/bots/api#setwebhook
+    const webhookUrl = `${requestUrl.protocol}//${requestUrl.hostname}${suffix}`
+    const r = await (await fetch(apiUrl('setWebhook', { url: webhookUrl, secret_token: secret }))).json()
+    return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
 }
 
 /**
  * Remove webhook
  * https://core.telegram.org/bots/api#setwebhook
  */
-async function unRegisterWebhook (event) {
-  const r = await (await fetch(apiUrl('setWebhook', { url: '' }))).json()
-  return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
+async function unRegisterWebhook(event) {
+    const r = await (await fetch(apiUrl('setWebhook', { url: '' }))).json()
+    return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
 }
 
-async function isFraud(id){
-  id = id.toString()
-  let db = await fetch(fraudDb).then(r => r.text())
-  let arr = db.split('\n').filter(v => v)
-  console.log(JSON.stringify(arr))
-  let flag = arr.filter(v => v === id).length !== 0
-  console.log(flag)
-  return flag
+async function isFraud(id) {
+    id = id.toString()
+    let db = await fetch(fraudDb).then(r => r.text())
+    let arr = db.split('\n').filter(v => v)
+    console.log(JSON.stringify(arr))
+    let flag = arr.filter(v => v === id).length !== 0
+    console.log(flag)
+    return flag
 }
