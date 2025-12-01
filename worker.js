@@ -155,9 +155,10 @@ async function handleGuestMessage(message) {
         })
     }
 
-    if (message.text.startsWith('/code ')) {
-        let sendCode = message.text.substring(6).trim()
-        let correctCode = await fetch(verificationCodeUrl).then(r => r.text())
+    if (/^\/code\s+\S+$/.exec(message.text)) {
+        // 处理代码，例如提取参数
+        const sendCode = message.text.split(/\s+/).pop();
+        let correctCode = await fetch(verificationCodeRawUrl).then(r => r.text())
         if (sendCode === correctCode.trim()) {
             await nfd.put('last-verification-' + chatId, Date.now())
             return sendMessage({
